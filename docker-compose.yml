@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  discord-mesh-bot:
+    image: discord-mesh-bot:latest
+    build: .
+    container_name: meshbot
+    restart: unless-stopped
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      CHANNEL_ID: ${CHANNEL_ID}
+    volumes:
+      - meshbot-db:/usr/src/app/db
+
+volumes:
+  meshbot-db:

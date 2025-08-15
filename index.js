@@ -55,7 +55,7 @@ async function fetchAndPostMessages() {
         name: msg.text || '*[no text]*',
         value: ''  
       })
-      .setFooter({ text: `Packet ID: ${msg.packet_id}` })
+      .setFooter({ text: `Channel: ${msg.channel_id}` })
       .setTimestamp(new Date(msg.created_at));
 
       await channel.send({ embeds: [embed] });

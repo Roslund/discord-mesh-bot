@@ -22,8 +22,19 @@ function queueDbWrite() {
   return writePromise;
 }
 
-client.once('ready', async () => {
+client.once('clientReady', async () => {
   console.log(`Logged in as ${client.user.tag}`);
+  
+  // Initialize the database
+  try {
+    await db.read();
+    console.log('Database initialized successfully');
+  } catch (error) {
+    console.log('Database file not found, creating new one');
+    db.data = { sentPacketIds: [] };
+    await db.write();
+  }
+  
   fetchAndPostMessages(); // Initial run
   setInterval(fetchAndPostMessages, 30000); // Every 30 sec
 });

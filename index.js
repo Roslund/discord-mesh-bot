@@ -23,7 +23,7 @@ function queueDbWrite() {
 }
 
 client.once('clientReady', async () => {
-  console.log(`Logged in as ${client.user.tag}`);
+  console.log(`[ready] Logged in as ${client.user?.tag} (id=${client.user?.id})`);
 
   // Initialize the database
   try {
@@ -50,6 +50,7 @@ client.once('clientReady', async () => {
 
   // Register slash commands per guild
   await registerAlertsCommands();
+  console.log(`[ready] Registered commands for ${client.guilds.cache.size} guild(s)`);
 
   // Start pollers
   fetchAndPostMessages(); // Initial run
@@ -232,7 +233,9 @@ async function registerAlertsCommands() {
 
   for (const guild of client.guilds.cache.values()) {
     try {
+      console.log(`[commands] Registering in guild ${guild.id} (${guild.name}) as ${client.user?.tag}`);
       await guild.commands.set(commands);
+      console.log(`[commands] Registered /alerts in guild ${guild.name}`);
     } catch (err) {
       console.error('Failed to register commands for guild', guild.id, err.message);
     }
@@ -242,9 +245,11 @@ async function registerAlertsCommands() {
 client.on('interactionCreate', async (interaction) => {
   try {
     if (!interaction.isChatInputCommand()) return;
+    console.log(`[interaction] ${interaction.user.tag} used /${interaction.commandName} in ${interaction.guild?.id} (${interaction.guild?.name || 'DM'})`);
     if (interaction.commandName !== 'alerts') return;
 
     const sub = interaction.options.getSubcommand();
+    console.log(`[interaction] Handling /alerts ${sub} by ${interaction.user.id} in guild ${interaction.guildId}`);
     if (sub === 'subscribe') {
       const nodeInput = interaction.options.getString('node', true);
       const eventsInput = interaction.options.getString('events');
@@ -252,6 +257,7 @@ client.on('interactionCreate', async (interaction) => {
       const offlineInput = interaction.options.getString('offline');
 
       const nodeId = normalizeNodeId(nodeInput);
+      console.log(`[interaction] subscribe nodeInput=${nodeInput} -> nodeId=${nodeId}`);
       if (!nodeId) {
         await interaction.reply({ content: 'Invalid node id. Use decimal or !hex.', ephemeral: true });
         return;
@@ -299,12 +305,14 @@ client.on('interactionCreate', async (interaction) => {
 
       const nodeName = formatNode(node, nodeId);
       await interaction.reply({ content: `Subscribed to ${nodeName} (${toHexBang(nodeId)}) for events: ${Object.entries(events).filter(([, v]) => v).map(([k]) => k).join(', ')}.`, ephemeral: true });
+      console.log(`[interaction] subscribe success user=${userId} node=${nodeId}`);
     }
 
     if (sub === 'unsubscribe') {
       const nodeInput = interaction.options.getString('node', true);
       const eventsInput = interaction.options.getString('events');
       const nodeId = normalizeNodeId(nodeInput);
+      console.log(`[interaction] unsubscribe nodeInput=${nodeInput} -> nodeId=${nodeId}`);
       if (!nodeId) {
         await interaction.reply({ content: 'Invalid node id.', ephemeral: true });
         return;
@@ -334,6 +342,7 @@ client.on('interactionCreate', async (interaction) => {
       }
       await queueDbWrite();
       await interaction.reply({ content: 'Unsubscribe updated.', ephemeral: true });
+      console.log(`[interaction] unsubscribe success user=${userId} node=${nodeId}`);
     }
 
     if (sub === 'list') {
@@ -350,11 +359,13 @@ client.on('interactionCreate', async (interaction) => {
         return `${nodeName} (${toHexBang(s.nodeId)}) — [${evs}] batt<${s.thresholds.battery} offline>${s.thresholds.offlineMinutes}m`;
       }));
       await interaction.reply({ content: lines.join('\n'), ephemeral: true });
+      console.log(`[interaction] listed ${subs.length} subscription(s) for user=${userId}`);
     }
 
     if (sub === 'test') {
       const nodeInput = interaction.options.getString('node', true);
       const nodeId = normalizeNodeId(nodeInput);
+      console.log(`[interaction] test nodeInput=${nodeInput} -> nodeId=${nodeId}`);
       if (!nodeId) {
         await interaction.reply({ content: 'Invalid node id.', ephemeral: true });
         return;
@@ -407,11 +418,13 @@ async function runAlertsPoller() {
       }
 
       // Update per-node snapshot
+      const curUptime = Number(node.uptime_seconds);
       db.data.perNodeSnapshots[sub.nodeId] = {
-        lastUptimeSeconds: typeof node.uptime_seconds === 'number' ? node.uptime_seconds : snapshot.lastUptimeSeconds,
+        lastUptimeSeconds: Number.isFinite(curUptime) ? curUptime : snapshot.lastUptimeSeconds,
         lastBatteryLevel: typeof node.battery_level === 'number' ? node.battery_level : snapshot.lastBatteryLevel,
         lastUpdatedAt: node.updated_at || snapshot.lastUpdatedAt
       };
+      console.log(`[alerts] Updated per-node snapshot for node ${sub.nodeId}`, node);
     }
 
     await queueDbWrite();
@@ -465,16 +478,16 @@ function evaluateEvents(sub, node, snapshot) {
   }
 
   // Reboot
-  if (sub.events.reboot && typeof node.uptime_seconds === 'number') {
+  if (sub.events.reboot) {
     const prev = typeof snapshot.lastUptimeSeconds === 'number' ? snapshot.lastUptimeSeconds : null;
-    const cur = node.uptime_seconds;
+    const cur = Number(node.uptime_seconds);
     const key = `${sub.userId}|${sub.nodeId}|reboot`;
     const state = db.data.alertsState[key] || { status: 'normal', lastAlertMs: 0 };
-    if (prev !== null && (prev - cur >= 300) && (prev >= 1800 && cur <= 600 || (prev - cur >= 300))) {
+    if (prev !== null && Number.isFinite(cur) && (prev - cur >= 300)) {
       if (state.status !== 'alert') {
         items.push({ event: 'reboot', message: `Uptime dropped from ${Math.floor(prev/60)}m to ${Math.floor(cur/60)}m`, isAlert: true });
       }
-    } else if (state.status === 'alert' && prev !== null && cur > prev) {
+    } else if (state.status === 'alert' && prev !== null && Number.isFinite(cur) && cur > prev) {
       items.push({ event: 'reboot', message: 'Reboot acknowledged (uptime increasing).', isAlert: false });
     }
   }
@@ -521,6 +534,7 @@ async function maybeSendAlert(userId, nodeId, node, event, message, isAlert, now
 
   try {
     await user.send({ embeds: [embed] });
+    console.log(`[alerts] DM sent user=${userId} event=${event} node=${nodeId} isAlert=${isAlert}`);
     // Update state only after successful DM
     db.data.alertsState[key] = { status: isAlert ? 'alert' : 'normal', lastAlertMs: isAlert ? nowMs : state.lastAlertMs };
     db.data.alertsMeta.sentInHour += 1;

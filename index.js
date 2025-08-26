@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, EmbedBuilder } from 'discord.js';
+import { Client, GatewayIntentBits, EmbedBuilder, MessageFlags } from 'discord.js';
 import axios from 'axios';
 import { Low } from 'lowdb';
 import { JSONFile } from 'lowdb/node';
@@ -245,6 +245,7 @@ async function registerAlertsCommands() {
 client.on('interactionCreate', async (interaction) => {
   try {
     if (!interaction.isChatInputCommand()) return;
+    // I'm not sure if global_name is working as expected, we do fall back to username
     console.log(`[interaction] ${interaction.user.global_name ?? interaction.user.username } used /${interaction.commandName} in ${interaction.guild?.id} (${interaction.guild?.name || 'DM'})`);
     if (interaction.commandName !== 'alerts') return;
 
@@ -258,21 +259,21 @@ client.on('interactionCreate', async (interaction) => {
       const nodeId = normalizeNodeId(nodeInput);
       console.log(`[interaction] subscribe nodeInput=${nodeInput} -> nodeId=${nodeId}`);
       if (!nodeId) {
-        await interaction.reply({ content: 'Invalid node id. Use decimal or !hex.', ephemeral: true });
+        await interaction.reply({ content: 'Invalid node id. Use decimal or !hex.', flags: MessageFlags.Ephemeral });
         return;
       }
 
       // Validate node exists
       const node = await fetchNodeInfo(nodeId);
       if (!node) {
-        await interaction.reply({ content: `Node ${toHexBang(nodeId)} not found.`, ephemeral: true });
+        await interaction.reply({ content: `Node ${toHexBang(nodeId)} not found.`, flags: MessageFlags.Ephemeral });
         return;
       }
 
       const userId = interaction.user.id;
       const perUserNodes = new Set(db.data.alertsSubscriptions.filter(s => s.userId === userId).map(s => s.nodeId));
       if (!perUserNodes.has(nodeId) && perUserNodes.size >= 20) {
-        await interaction.reply({ content: 'You reached the max of 20 watched nodes.', ephemeral: true });
+        await interaction.reply({ content: 'You reached the max of 20 watched nodes.', flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -281,7 +282,7 @@ client.on('interactionCreate', async (interaction) => {
         const set = new Set(eventsInput.split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
         events = { battery: set.has('battery'), offline: set.has('offline'), reboot: set.has('reboot') };
         if (!events.battery && !events.offline && !events.reboot) {
-          await interaction.reply({ content: 'No valid events specified. Use battery,offline,reboot.', ephemeral: true });
+          await interaction.reply({ content: 'No valid events specified. Use battery,offline,reboot.', flags: MessageFlags.Ephemeral });
           return;
         }
       }
@@ -303,7 +304,7 @@ client.on('interactionCreate', async (interaction) => {
       await queueDbWrite();
 
       const nodeName = formatNode(node, nodeId);
-      await interaction.reply({ content: `Subscribed to ${nodeName} (${toHexBang(nodeId)}) for events: ${Object.entries(events).filter(([, v]) => v).map(([k]) => k).join(', ')}.`, ephemeral: true });
+      await interaction.reply({ content: `Subscribed to ${nodeName} (${toHexBang(nodeId)}) for events: ${Object.entries(events).filter(([, v]) => v).map(([k]) => k).join(', ')}.`, flags: MessageFlags.Ephemeral });
       console.log(`[interaction] subscribe success user=${userId} node=${nodeId}`);
     }
 
@@ -313,14 +314,14 @@ client.on('interactionCreate', async (interaction) => {
       const nodeId = normalizeNodeId(nodeInput);
       console.log(`[interaction] unsubscribe nodeInput=${nodeInput} -> nodeId=${nodeId}`);
       if (!nodeId) {
-        await interaction.reply({ content: 'Invalid node id.', ephemeral: true });
+        await interaction.reply({ content: 'Invalid node id.', flags: MessageFlags.Ephemeral });
         return;
       }
       const userId = interaction.user.id;
 
       const idx = db.data.alertsSubscriptions.findIndex(s => s.userId === userId && s.nodeId === nodeId);
       if (idx < 0) {
-        await interaction.reply({ content: 'No subscription found for that node.', ephemeral: true });
+        await interaction.reply({ content: 'No subscription found for that node.', flags: MessageFlags.Ephemeral });
         return;
       }
       if (!eventsInput) {
@@ -340,7 +341,7 @@ client.on('interactionCreate', async (interaction) => {
         }
       }
       await queueDbWrite();
-      await interaction.reply({ content: 'Unsubscribe updated.', ephemeral: true });
+      await interaction.reply({ content: 'Unsubscribe updated.', flags: MessageFlags.Ephemeral });
       console.log(`[interaction] unsubscribe success user=${userId} node=${nodeId}`);
     }
 
@@ -348,7 +349,7 @@ client.on('interactionCreate', async (interaction) => {
       const userId = interaction.user.id;
       const subs = db.data.alertsSubscriptions.filter(s => s.userId === userId);
       if (subs.length === 0) {
-        await interaction.reply({ content: 'No subscriptions yet.', ephemeral: true });
+        await interaction.reply({ content: 'No subscriptions yet.', flags: MessageFlags.Ephemeral });
         return;
       }
       const lines = await Promise.all(subs.map(async (s) => {
@@ -357,7 +358,7 @@ client.on('interactionCreate', async (interaction) => {
         const evs = Object.entries(s.events).filter(([, v]) => v).map(([k]) => k).join(', ');
         return `${nodeName} (${toHexBang(s.nodeId)}) — [${evs}] batt<${s.thresholds.battery} offline>${s.thresholds.offlineMinutes}m`;
       }));
-      await interaction.reply({ content: lines.join('\n'), ephemeral: true });
+      await interaction.reply({ content: lines.join('\n'), flags: MessageFlags.Ephemeral });
       console.log(`[interaction] listed ${subs.length} subscription(s) for user=${userId}`);
     }
 
@@ -366,15 +367,15 @@ client.on('interactionCreate', async (interaction) => {
       const nodeId = normalizeNodeId(nodeInput);
       console.log(`[interaction] test nodeInput=${nodeInput} -> nodeId=${nodeId}`);
       if (!nodeId) {
-        await interaction.reply({ content: 'Invalid node id.', ephemeral: true });
+        await interaction.reply({ content: 'Invalid node id.', flags: MessageFlags.Ephemeral });
         return;
       }
       const node = await fetchNodeInfo(nodeId);
       if (!node) {
-        await interaction.reply({ content: `Node ${toHexBang(nodeId)} not found.`, ephemeral: true });
+        await interaction.reply({ content: `Node ${toHexBang(nodeId)} not found.`, flags: MessageFlags.Ephemeral });
         return;
       }
-      await interaction.reply({ content: 'Sending test DM...', ephemeral: true });
+      await interaction.reply({ content: 'Sending test DM...', flags: MessageFlags.Ephemeral });
       const embed = buildAlertEmbed('Test Alert', node, nodeId, `Sample condition for ${toHexBang(nodeId)}`);
       try {
         await interaction.user.send({ embeds: [embed] });
@@ -385,7 +386,7 @@ client.on('interactionCreate', async (interaction) => {
   } catch (err) {
     console.error('Interaction error:', err);
     if (interaction.isRepliable() && !interaction.replied) {
-      await interaction.reply({ content: 'Error handling command.', ephemeral: true });
+      await interaction.reply({ content: 'Error handling command.', flags: MessageFlags.Ephemeral });
     }
   }
 });

@@ -245,11 +245,10 @@ async function registerAlertsCommands() {
 client.on('interactionCreate', async (interaction) => {
   try {
     if (!interaction.isChatInputCommand()) return;
-    console.log(`[interaction] ${interaction.user.username} used /${interaction.commandName} in ${interaction.guild?.id} (${interaction.guild?.name || 'DM'})`);
+    console.log(`[interaction] ${interaction.user.global_name ?? interaction.user.username } used /${interaction.commandName} in ${interaction.guild?.id} (${interaction.guild?.name || 'DM'})`);
     if (interaction.commandName !== 'alerts') return;
 
     const sub = interaction.options.getSubcommand();
-    console.log(`[interaction] Handling /alerts ${sub} by ${interaction.user.username} in guild ${interaction.guildId}`);
     if (sub === 'subscribe') {
       const nodeInput = interaction.options.getString('node', true);
       const eventsInput = interaction.options.getString('events');

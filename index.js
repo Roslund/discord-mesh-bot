@@ -424,7 +424,6 @@ async function runAlertsPoller() {
         lastBatteryLevel: typeof node.battery_level === 'number' ? node.battery_level : snapshot.lastBatteryLevel,
         lastUpdatedAt: node.updated_at || snapshot.lastUpdatedAt
       };
-      console.log(`[alerts] Updated per-node snapshot for node ${sub.nodeId}`, node);
     }
 
     await queueDbWrite();
